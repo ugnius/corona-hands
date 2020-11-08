@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Corona hands</title>
+	</head>
+	<body>
+		<div id="canvas-wrapper">
+			<button id="video-toggle">Toggle video</button>
+			<canvas id="output" style="filter: grayscale(100%);"></canvas>
+			<video id="video" playsinline style="
+			-webkit-transform: scaleX(-1);
+			transform: scaleX(-1);
+			visibility: hidden;
+			width: auto;
+			height: auto;
+			position: absolute;
+			">
+		</video>
+		<script src="https://unpkg.com/@tensorflow/tfjs-core@2.1.0/dist/tf-core.js"></script>
+		<script src="https://unpkg.com/@tensorflow/tfjs-converter@2.1.0/dist/tf-converter.js"></script>
+		<script src="https://unpkg.com/@tensorflow/tfjs-backend-webgl@2.1.0/dist/tf-backend-webgl.js"></script>
+		<script src="https://unpkg.com/@tensorflow-models/handpose@0.0.6/dist/handpose.js"></script>
+		<script>
+			const videoWidth = 640
+			const videoHeight = 500
+
+			async function setupCamera() {
+				if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+					throw new Error('Browser API navigator.mediaDevices.getUserMedia not available')
+				}
+
+				const video = document.getElementById('video')
+				const stream = await navigator.mediaDevices.getUserMedia({
+					'audio': false,
+					'video': {
+						facingMode: 'user',
+						width: 640,
+						height: 500,
+					},
+				})
+				video.srcObject = stream
+
+				return new Promise((resolve) => {
+					video.onloadedmetadata = () => {
+						resolve(video)
+					}
+				})
+			}
+
+			let video, ctx, model, corona, audio
+			let detected = 0, showVideo = true
+
+			async function main() {
+				await tf.setBackend('webgl')
+				model = await handpose.load()
+
+				video = await setupCamera()
+				video.play()
+
+				canvas = document.getElementById('output')
+				canvas.width = videoWidth
+				canvas.height = videoHeight
+				video.width = videoWidth
+				video.height = videoHeight
+				ctx = canvas.getContext('2d')
+  			ctx.clearRect(0, 0, videoWidth, videoHeight)
+				ctx.translate(videoWidth, 0)
+				ctx.scale(-1, 1)
+
+				corona = new Image()
+				corona.src = 'corona.png'
+
+				audio = new Audio('alert.ogg')
+
+				document.getElementById('video-toggle').addEventListener('click', () => {
+					showVideo = !showVideo
+					if (!showVideo) {
+						ctx.clearRect(0, 0, videoWidth, videoHeight)
+					}
+				})
+
+				setTimeout(tick, 200)
+			}
+
+			async function tick() {
+
+				const predictions = await model.estimateHands(video)
+				if (showVideo) {
+					ctx.drawImage(video, 0, 0, videoWidth, videoHeight, 0, 0, videoWidth, videoHeight)
+				}
+
+				if (predictions[0]) {
+					detected++
+					if (!showVideo) {
+						ctx.clearRect(0, 0, videoWidth, videoHeight)
+					}
+					for (const landmark of predictions[0].landmarks) {
+						ctx.drawImage(corona, landmark[0] - landmark[2]/2, landmark[1] - landmark[2]/2, landmark[2], landmark[2])
+					}
+					if (detected === 3) {
+						audio.play()
+					}
+				}
+				else {
+					detected = 0
+				}
+
+				setTimeout(tick, 200)
+			}
+
+			main()
+
+		</script>
+	</body>
+</html>
